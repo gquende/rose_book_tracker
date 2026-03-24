@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/book.dart';
 import '../providers/book_provider.dart';
-import '../providers/auth_provider.dart' as src;
 import '../services/notification_service.dart';
-import 'detail_screen.dart';
-import 'scanner_screen.dart';
-import 'add_edit_book_screen.dart';
+import '../widgets/book_statistics_chart.dart';
+import '../config/routes.dart';
 
 class BookListScreen extends StatefulWidget {
   final String? filterStatus;
@@ -37,12 +34,9 @@ class _BookListScreenState extends State<BookListScreen> {
               title: const Text("Scanear Código ISBN"),
               onTap: () async {
                 Navigator.pop(ctx);
-                final String? barcode = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ScannerScreen()),
-                );
+                final String? barcode = await Navigator.pushNamed(context, AppRoutes.scanner) as String?;
                 if (barcode != null && mounted) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AddEditBookScreen()));
+                  Navigator.pushNamed(context, AppRoutes.addEditBook);
                 }
               },
             ),
@@ -51,7 +45,7 @@ class _BookListScreenState extends State<BookListScreen> {
               title: const Text("Inserir Manualmente"),
               onTap: () {
                 Navigator.pop(ctx);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const AddEditBookScreen()));
+                Navigator.pushNamed(context, AppRoutes.addEditBook);
               },
             ),
           ],
@@ -77,7 +71,7 @@ class _BookListScreenState extends State<BookListScreen> {
     }
   }
 
-  // --- LEMBRETE COM NOTIFICAÇÃO VERDE DE SUCESSO ---
+  // --- LEMBRETE COM NOTIFICAÇÃO ---
   Future<void> _scheduleReminder() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -90,7 +84,7 @@ class _BookListScreenState extends State<BookListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Lembrete configurado com sucesso! 🔔"),
+            content: Text("Lembrete configurado com sucesso!"),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),
@@ -143,7 +137,7 @@ class _BookListScreenState extends State<BookListScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.account_circle_outlined, color: Colors.blueGrey),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen())),
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.profile),
           ),
         ],
       ),
@@ -158,7 +152,7 @@ class _BookListScreenState extends State<BookListScreen> {
                 if (widget.filterStatus != null)
                   IconButton(
                     icon: const Icon(Icons.filter_list_off),
-                    onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const BookListScreen())),
+                    onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.bookList),
                   ),
               ],
             ),
@@ -210,10 +204,10 @@ class _BookListScreenState extends State<BookListScreen> {
                             title: Text(book.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                             subtitle: Text(book.author),
                             trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BookDetailScreen(book: book))),
+                            onTap: () => Navigator.pushNamed(context, AppRoutes.bookDetail, arguments: book),
                           ),
                         );
-                      }).toList(),
+                      }),
                   ],
                 );
               },
@@ -226,98 +220,6 @@ class _BookListScreenState extends State<BookListScreen> {
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text("NOVO LIVRO", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: () => _showAddOptions(context),
-      ),
-    );
-  }
-}
-
-class BookStatisticsChart extends StatelessWidget {
-  final Map<String, int> stats;
-  const BookStatisticsChart({super.key, required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    final int total = stats['total'] ?? 0;
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Resumo da Estante', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('$total Livros', style: const TextStyle(color: Color(0xFFFFB7C5), fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 15),
-          _buildBar(context, 'Lidos', stats['completed'] ?? 0, total, Colors.green, 'completed'),
-          _buildBar(context, 'A ler', stats['currentlyReading'] ?? 0, total, Colors.blue, 'currently-reading'),
-          _buildBar(context, 'Quero ler', stats['wantToRead'] ?? 0, total, Colors.orange, 'want-to-read'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBar(BuildContext context, String label, int count, int total, Color color, String status) {
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BookListScreen(filterStatus: status))),
-      child: Container(
-        color: Colors.transparent,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(label),
-                Row(children: [Text('$count'), const Icon(Icons.chevron_right, size: 18, color: Colors.grey)]),
-              ],
-            ),
-            const SizedBox(height: 5),
-            LinearProgressIndicator(
-              value: total > 0 ? count / total : 0,
-              color: color,
-              backgroundColor: color.withOpacity(0.1),
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final auth = Provider.of<src.AuthProvider>(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('O Meu Perfil')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.account_circle, size: 80, color: Color(0xFFFFB7C5)),
-            const SizedBox(height: 10),
-            Text(auth.user?.email ?? 'Utilizador', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: () {
-                auth.logout();
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-              child: const Text('Sair da Conta', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
       ),
     );
   }

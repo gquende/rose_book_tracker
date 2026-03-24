@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:book_library/providers/book_provider.dart';
 import 'package:book_library/providers/auth_provider.dart' as src;
 import 'package:book_library/providers/settings_provider.dart';
+import 'package:book_library/repositories/book_repository.dart';
 import 'package:book_library/screens/auth/login_screen.dart';
 import 'package:book_library/screens/book_list_screen.dart';
+import 'package:book_library/config/routes.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,23 +28,26 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Repository partilhado por toda a app
+    final bookRepository = BookRepository();
+
     return MultiProvider(
       providers: [
         // Provider 1: Autenticação
         ChangeNotifierProvider(create: (_) => src.AuthProvider()),
 
-        // Provider 2: Configurações (Tema Escuro/Claro) - NOVO
+        // Provider 2: Configurações (Tema Escuro/Claro com persistência)
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
 
-        // Provider 3: Gestão de Livros (ProxyProvider)
+        // Provider 3: Gestão de Livros (ProxyProvider ligado ao Auth)
         ChangeNotifierProxyProvider<src.AuthProvider, BookProvider>(
-          create: (_) => BookProvider(),
+          create: (_) => BookProvider(repository: bookRepository),
           update: (context, auth, bookProvider) {
             return bookProvider!..updateUserId(auth.user?.uid);
           },
         ),
       ],
-      child: Consumer<SettingsProvider>( // 2. Consumer para mudar o tema em tempo real
+      child: Consumer<SettingsProvider>(
         builder: (context, settings, child) {
           return MaterialApp(
             title: 'Biblioteca de Livros',
@@ -52,7 +57,7 @@ class MyApp extends StatelessWidget {
             theme: ThemeData(
               useMaterial3: true,
               colorScheme: ColorScheme.fromSeed(
-                seedColor: const Color(0xFFFFB7C5), // Teu Rosa Bebé
+                seedColor: const Color(0xFFFFB7C5),
                 brightness: Brightness.light,
               ),
             ),
@@ -60,6 +65,8 @@ class MyApp extends StatelessWidget {
               useMaterial3: true,
               brightness: Brightness.dark,
             ),
+            // Rotas nomeadas centralizadas
+            onGenerateRoute: AppRoutes.onGenerateRoute,
             home: const AuthWrapper(),
           );
         },
@@ -76,7 +83,7 @@ class AuthWrapper extends StatelessWidget {
     final authProvider = Provider.of<src.AuthProvider>(context);
 
     if (authProvider.user != null) {
-      return BookListScreen();
+      return const BookListScreen();
     } else {
       return const LoginScreen();
     }

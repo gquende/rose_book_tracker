@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../screens/book_list_screen.dart';
+import '../config/routes.dart';
 
 class BookStatisticsChart extends StatelessWidget {
   final Map<String, int> stats;
@@ -26,7 +26,6 @@ class BookStatisticsChart extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // CABEÇALHO COM O TOTAL
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -48,8 +47,6 @@ class BookStatisticsChart extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-
-          // AS BARRAS CLICÁVEIS
           _buildBar(context, 'Lidos', stats['completed'] ?? 0, total, Colors.green, 'completed'),
           _buildBar(context, 'A ler', stats['currentlyReading'] ?? 0, total, Colors.blue, 'currently-reading'),
           _buildBar(context, 'Quero ler', stats['wantToRead'] ?? 0, total, Colors.orange, 'want-to-read'),
@@ -62,14 +59,7 @@ class BookStatisticsChart extends StatelessWidget {
     double progress = (total > 0) ? count / total : 0.0;
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BookListScreen(filterStatus: statusCode),
-          ),
-        );
-      },
+      onTap: () => Navigator.pushNamed(context, AppRoutes.bookList, arguments: statusCode),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10.0),
         color: Colors.transparent,

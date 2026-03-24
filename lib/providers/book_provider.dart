@@ -1,28 +1,28 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
 import '../models/book.dart';
-import '../services/storage_service.dart';
+import '../repositories/book_repository.dart';
 
 class BookProvider with ChangeNotifier {
+  final BookRepository _repository;
   List<Book> _books = [];
   String _searchQuery = '';
   String? _userId;
   bool _isLoading = false;
+  StreamSubscription? _subscription;
 
-  final StorageService _storageService = StorageService();
+  BookProvider({BookRepository? repository})
+      : _repository = repository ?? BookRepository();
 
   // Getters
   bool get isLoading => _isLoading;
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   // Lista de livros filtrada pela pesquisa
   List<Book> get books {
     if (_searchQuery.isEmpty) return _books;
     return _books.where((book) =>
-    book.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+        book.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
         book.author.toLowerCase().contains(_searchQuery.toLowerCase())
     ).toList();
   }
@@ -32,54 +32,46 @@ class BookProvider with ChangeNotifier {
     if (_userId == uid) return;
     _userId = uid;
 
+    // Cancelar listener anterior para evitar memory leak
+    _subscription?.cancel();
+    _subscription = null;
+
     if (_userId == null) {
       _books = [];
       _isLoading = false;
       notifyListeners();
     } else {
-      fetchBooks();
+      _fetchBooks();
     }
   }
 
-  // Referência para a coleção de livros no Firestore
-  CollectionReference get _db => _firestore
-      .collection('users')
-      .doc(_userId)
-      .collection('books');
+  // --- LISTAGEM EM TEMPO REAL ---
+  void _fetchBooks() {
+    if (_userId == null) return;
+    _isLoading = true;
 
-  // --- REQUISITO 3: STORAGE E PERSISTÊNCIA ---
+    _subscription = _repository.getBooksStream(_userId!).listen(
+      (books) {
+        _books = books;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (e) {
+        debugPrint("Erro ao carregar livros: $e");
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  // --- GUARDAR LIVRO (CRIAR OU ACTUALIZAR) ---
   Future<void> saveBook(Book book, File? imageFile) async {
+    if (_userId == null) return;
     _isLoading = true;
     notifyListeners();
 
     try {
-      String? imageUrl = book.imageUrl;
-
-      // MELHORIA PONTO 1: Lógica de preenchimento automático
-      int finalCurrentPage = book.currentPage;
-      if (book.status.toLowerCase() == 'completed' || book.status == 'Lido') {
-        finalCurrentPage = book.totalPages;
-      }
-
-      if (imageFile != null && _userId != null) {
-        String bookId = book.id.isEmpty
-            ? DateTime.now().millisecondsSinceEpoch.toString()
-            : book.id;
-        // Upload para o Firebase Storage
-        imageUrl = await _storageService.uploadBookCover(_userId!, bookId, imageFile);
-      }
-
-      // Criamos a cópia com a página e imagem atualizadas
-      final bookToSave = book.copyWith(
-        imageUrl: imageUrl,
-        currentPage: finalCurrentPage,
-      );
-
-      if (book.id.isEmpty) {
-        await _db.add(bookToSave.toFirestore());
-      } else {
-        await _db.doc(book.id).update(bookToSave.toFirestore());
-      }
+      await _repository.saveBook(_userId!, book, imageFile);
     } catch (e) {
       debugPrint("Erro ao guardar livro: $e");
       rethrow;
@@ -89,7 +81,13 @@ class BookProvider with ChangeNotifier {
     }
   }
 
-  // --- REQUISITO 3: SESSÕES DE LEITURA (COM DURAÇÃO) ---
+  // --- ELIMINAR LIVRO ---
+  Future<void> deleteBook(String id) async {
+    if (_userId == null) return;
+    await _repository.deleteBook(_userId!, id);
+  }
+
+  // --- SESSÕES DE LEITURA ---
   Future<void> addReadingSession({
     required String bookId,
     required int startPage,
@@ -98,60 +96,32 @@ class BookProvider with ChangeNotifier {
   }) async {
     if (_userId == null) return;
     try {
-      final sessionData = {
-        'bookId': bookId,
-        'startPage': startPage,
-        'endPage': endPage,
-        'duration': duration,
-        'date': FieldValue.serverTimestamp(),
-      };
-
-      await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('readingSessions')
-          .add(sessionData);
-
-      // Atualiza o progresso no documento do livro
-      await _db.doc(bookId).update({'currentPage': endPage});
+      await _repository.addReadingSession(
+        userId: _userId!,
+        bookId: bookId,
+        startPage: startPage,
+        endPage: endPage,
+        duration: duration,
+      );
     } catch (e) {
       debugPrint("Erro na sessão: $e");
     }
   }
 
-  // --- REQUISITO 5: INTEGRAÇÃO API (GOOGLE BOOKS) ---
-  Future<List<dynamic>> fetchSimilarBooks(String author) async {
-    try {
-      final url = Uri.parse('https://www.googleapis.com/books/v1/volumes?q=inauthor:$author&maxResults=5');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['items'] ?? [];
-      }
-    } catch (e) {
-      debugPrint("Erro API: $e");
-    }
-    return [];
+  // --- INTEGRAÇÃO API (GOOGLE BOOKS) ---
+  Future<Map<String, dynamic>?> searchByIsbn(String isbn) {
+    return _repository.searchByIsbn(isbn);
   }
 
-  // --- LISTAGEM EM TEMPO REAL ---
-  Future<void> fetchBooks() async {
-    if (_userId == null) return;
-    _isLoading = true;
-
-    try {
-      _db.snapshots().listen((snapshot) {
-        _books = snapshot.docs.map((doc) => Book.fromFirestore(doc)).toList();
-        _isLoading = false;
-        notifyListeners();
-      });
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-    }
+  Future<Map<String, dynamic>?> fetchBookDescription(String title) {
+    return _repository.fetchBookDescription(title);
   }
 
-  // --- GESTÃO DE ESTADO: CÁLCULO DAS ESTATÍSTICAS ---
+  Future<List<dynamic>> fetchSimilarBooks(String author) {
+    return _repository.fetchSimilarBooks(author);
+  }
+
+  // --- ESTATÍSTICAS ---
   Map<String, int> getStatistics() {
     return {
       'total': _books.length,
@@ -166,7 +136,9 @@ class BookProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> deleteBook(String id) async {
-    await _db.doc(id).delete();
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 }

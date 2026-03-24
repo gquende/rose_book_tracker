@@ -2,9 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'dart:convert';
 
 import '../models/book.dart';
 import '../providers/book_provider.dart';
@@ -35,7 +33,7 @@ class _AddEditBookScreenState extends State<AddEditBookScreen> {
   String _selectedStatus = 'want-to-read';
   double _rating = 0.0;
   bool _isSaving = false;
-  bool _isLoadingScan = false; // CONTROLADOR DE CARREGAMENTO
+  bool _isLoadingScan = false;
   File? _imageFile;
 
   final List<String> _statusOptions = ['want-to-read', 'currently-reading', 'completed'];
@@ -75,7 +73,7 @@ class _AddEditBookScreenState extends State<AddEditBookScreen> {
     super.dispose();
   }
 
-  // --- FUNÇÃO DE PESQUISA POR ISBN (CORRIGIDA) ---
+  // --- PESQUISA POR ISBN VIA PROVIDER/REPOSITORY ---
   Future<void> _fetchBookByIsbn(String isbn) async {
     final cleanIsbn = isbn.trim().replaceAll(RegExp(r'[^0-9]'), '');
     if (cleanIsbn.isEmpty) return;
@@ -83,30 +81,27 @@ class _AddEditBookScreenState extends State<AddEditBookScreen> {
     setState(() => _isLoadingScan = true);
 
     try {
-      var url = Uri.parse('https://www.googleapis.com/books/v1/volumes?q=isbn:$cleanIsbn');
-      var response = await http.get(url).timeout(const Duration(seconds: 8));
+      final bookProvider = Provider.of<BookProvider>(context, listen: false);
+      final info = await bookProvider.searchByIsbn(cleanIsbn);
 
-      if (response.statusCode == 200) {
-        var data = jsonDecode(response.body);
-        if (data['totalItems'] != null && data['totalItems'] > 0) {
-          _fillFormWithGoogleData(data['items'][0]['volumeInfo']);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Livro encontrado! 📚'), backgroundColor: Colors.green),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Código não reconhecido como um livro. ❌'), backgroundColor: Colors.orange),
-            );
-          }
+      if (info != null) {
+        _fillFormWithGoogleData(info);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Livro encontrado!'), backgroundColor: Colors.green),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Código não reconhecido como um livro.'), backgroundColor: Colors.orange),
+          );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Erro de ligação. Verifica a internet. 🌐'), backgroundColor: Colors.redAccent),
+          const SnackBar(content: Text('Erro de ligação. Verifica a internet.'), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -114,7 +109,7 @@ class _AddEditBookScreenState extends State<AddEditBookScreen> {
     }
   }
 
-  void _fillFormWithGoogleData(dynamic info) {
+  void _fillFormWithGoogleData(Map<String, dynamic> info) {
     setState(() {
       _titleController.text = info['title'] ?? '';
       _authorController.text = (info['authors'] as List?)?.join(', ') ?? '';
@@ -151,7 +146,9 @@ class _AddEditBookScreenState extends State<AddEditBookScreen> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
     }
   }
 
@@ -199,7 +196,7 @@ class _AddEditBookScreenState extends State<AddEditBookScreen> {
                 },
               ),
               const SizedBox(height: 15),
-              TextFormField(controller: _genreController, decoration: const InputDecoration(labelText: 'Gênero', border: OutlineInputBorder())),
+              TextFormField(controller: _genreController, decoration: const InputDecoration(labelText: 'Género', border: OutlineInputBorder())),
               const SizedBox(height: 15),
               Row(children: [
                 Expanded(child: TextFormField(controller: _pagesController, decoration: const InputDecoration(labelText: 'Total Pág.', border: OutlineInputBorder()), keyboardType: TextInputType.number)),
